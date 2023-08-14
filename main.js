@@ -5,9 +5,14 @@ var database;
 ConnectToDb();
 
 async function ConnectToDb() {
-  database = await pool.connect();
+  try {
+    database = await pool.connect();
+  } catch (err) {
+    setTimeout(() => {
+      ConnectToDb();
+    }, 3000);
+  }
 }
-
 const validateJsonBody = require("./services/middlewares/validate.middleware");
 
 applicationInstance.post(
@@ -113,14 +118,19 @@ applicationInstance.get("/pessoas", async (req, res) => {
   }
 
   let queryResult = await database.query(
-    `SELECT *
-    FROM users
-    WHERE nome ILIKE $1 
-      OR  $2 = Any(stack)
-      OR apelido ILIKE $3
-    ORDER BY nome, stack, apelido
-    LIMIT 50;`,
-    [`%${req.query.t}%`, req.query.t ,`%${req.query.t}%`]
+    `SELECT
+    id,
+    apelido,
+    nome,
+    to_char(nascimento, 'YYYY-MM-DD') as nascimento,
+    stack
+FROM
+    users
+WHERE
+  to_tsvector('english', apelido) @@ to_tsquery('${req.query.t}:*')
+  OR to_tsvector('english', nome) @@ to_tsquery('${req.query.t}:*')
+  OR to_tsvector(array_to_string(stack, ' ')) @@ to_tsquery('${req.query.t}:*')
+LIMIT 50;`
   );
 
   res.writeHead(200, {
@@ -140,4 +150,13 @@ applicationInstance.get("/contagem-pessoas", async (req, res) => {
 const port = process.env.PORT || 3001;
 applicationInstance.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
+});
+
+process.on("SIGINT", async () => {
+  try {
+    await pool.end();
+    process.exit(0);
+  } catch (err) {
+    process.exit(1);
+  }
 });

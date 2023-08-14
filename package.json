@@ -1,6 +1,6 @@
 {
   "name": "rinha-de-backend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "main.js",
   "scripts": {
@@ -8,13 +8,11 @@
     "dev": "nodemon main.js",
     "compose:up": "docker-compose -f ./infra/docker-compose.yml up -d",
     "compose:down": "docker-compose -f ./infra/docker-compose.yml down",
-    "migrate:up": "npx node-pg-migrate up",
-    "prod": "npx node-pg-migrate up && node main.js"
+    "prod": "node main.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "node-pg-migrate": "^6.2.2",
     "pg": "^8.11.2",
     "pg-promise": "^11.5.3"
   },
