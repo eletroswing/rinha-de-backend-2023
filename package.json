@@ -1,22 +1,27 @@
 {
   "name": "rinha-de-backend",
-  "version": "1.0.1",
+  "version": "1.1.1",
   "description": "",
-  "main": "main.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node main.js",
-    "dev": "nodemon main.js",
+    "start": "node server.js",
+    "dev": "nodemon server.js",
     "compose:up": "docker-compose -f ./infra/docker-compose.yml up -d",
     "compose:down": "docker-compose -f ./infra/docker-compose.yml down",
-    "prod": "node main.js"
+    "prod": "node server.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "pg": "^8.11.2",
-    "pg-promise": "^11.5.3"
+    "pg-format": "^1.0.4",
+    "pg-promise": "^11.5.3",
+    "redis": "^4.6.7",
+    "socket.io-client": "^4.7.2",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
+    "@types/uuid": "^9.0.2",
     "dotenv": "^16.3.1",
     "nodemon": "^3.0.1"
   }
