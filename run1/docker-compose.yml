@@ -8,13 +8,12 @@ services:
       - "80"
     ports:
       - "3004:80"
-    
     depends_on:
       - database
-      - redis
+      - pubsub
     links:
       - database
-      - redis
+      - pubsub
     volumes:
       - .:/app_directory
     environment:
@@ -24,8 +23,7 @@ services:
       POSTGRES_PASSWORD: mypassword
       POSTGRES_USER: myuser
       POSTGRES_HOST: database
-      REDIS_PORT: 6379
-      REDIS_HOST: redis
+      PUBSUB: ws://localhost:8080
 
   api2:
     build:
@@ -37,10 +35,10 @@ services:
       - "3005:80"
     depends_on:
       - database
-      - redis
+      - pubsub
     links:
       - database
-      - redis
+      - pubsub
     volumes:
       - .:/app_directory
     environment:
@@ -52,6 +50,7 @@ services:
       POSTGRES_HOST: database
       REDIS_PORT: 6379
       REDIS_HOST: redis
+      PUBSUB: ws://localhost:8080
 
   database:
     image: postgres:latest
@@ -64,10 +63,10 @@ services:
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
-  redis:
-    image: redis:latest
+  pubsub:
+    image: eufountai/socket-pubsub:latest
     ports:
-      - "6379:6379"
+      - "8080:8080"
 
   nginx: # Load Balancer
     image: nginx:latest

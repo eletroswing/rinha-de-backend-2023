@@ -1,8 +1,8 @@
-const http = require("http");
+const TCP = require("./services/tcp");
 require("dotenv").config();
-const uuid = require('uuid')
-const format = require('pg-format');
-const crypto = require('crypto')
+const uuid = require("uuid");
+const format = require("pg-format");
+const crypto = require("crypto");
 
 const { io } = require("socket.io-client");
 
@@ -20,7 +20,7 @@ async function ConnectToDb(cb) {
     if (!database || database.ending) {
       database = await pool.connect();
     }
-    pubsub = io(process.env.PUBSUB || 'ws://localhost:8080/')
+    pubsub = io(process.env.WS || "ws://localhost:8080/");
     await cb();
   } catch (err) {
     setTimeout(() => {
@@ -30,47 +30,47 @@ async function ConnectToDb(cb) {
 }
 
 async function ServicesConnected() {
-  const users = await database.query("SELECT * FROM users")
+  const users = await database.query("SELECT * FROM users");
   const userPromises = users.rows.map(async (user) => {
-    await pubsub.emit('set-user', user)
-    await pubsub.emit('set-apelido', user.apelido)
+    await pubsub.emit("set-user", user);
+    await pubsub.emit("set-apelido", user.apelido);
   });
 
   await Promise.all(userPromises);
-
 }
 
-const server = new http.Server({
-  keepAliveTimeout: 20000,
-  keepAlive: true,
-});
+const server = new TCP();
 
 var router = new ServerRouter();
 
 /////////////////////////////////////////////////////////
-var addToDB = []
+var addToDB = [];
 
-setInterval(push, 3000)
+setInterval(push, 3000);
 
 async function create(data) {
-  addToDB.push(data)
+  addToDB.push(data);
 }
 
-async function push(){
-  if(addToDB.length > 0){
-
+async function push() {
+  if (addToDB.length > 0) {
     const insertValues = addToDB.map((user) => [
       user.id,
       user.nome,
       user.apelido,
       user.nascimento,
-      `{${user.stack ? user.stack.join(','): ""}}`, // Transforma o array em uma string no formato "{elemento1,elemento2}"
+      `{${user.stack ? user.stack.join(",") : ""}}`, // Transforma o array em uma string no formato "{elemento1,elemento2}"
     ]);
     try {
-      await database.query(format('INSERT INTO users(id, nome, apelido, nascimento, stack) VALUES %L', insertValues));
-    }catch(e){}
+      await database.query(
+        format(
+          "INSERT INTO users(id, nome, apelido, nascimento, stack) VALUES %L",
+          insertValues
+        )
+      );
+    } catch (e) {}
   }
-  addToDB = []
+  addToDB = [];
 }
 
 router.post("/pessoas", async (req, res) => {
@@ -92,22 +92,23 @@ router.post("/pessoas", async (req, res) => {
   if (!validated) {
     //first, need to be a unique apelido
     var blocked = false;
-    let has = await new Promise((resolve, reject) => {pubsub.emit('get-apelido', req.body.apelido, (res) => resolve(res))})
-    if(has){
+    let has = await new Promise((resolve, reject) => {
+      pubsub.emit("get-apelido", req.body.apelido, (res) => resolve(res));
+    });
+    if (has) {
       blocked = true;
-      res.writeHead(422, {
-        "Content-Type": "application/json",
+      const responseText = JSON.stringify({
+        message: "Apelido already exists.",
       });
-
-      res.end(
-        JSON.stringify({
-          message: "Apelido already exists.",
-        })
-      );
+      const response = `HTTP/1.1 422 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: ${responseText.length}\r\nContent-Type: application/json\r\n\r\n${responseText}`;
+      res.write(response);
     }
     if (!blocked) {
       try {
-        var id = uuid.v5(crypto.randomBytes(32).toString('hex'), uuid.v5(req.body.apelido, uuid.v4()))
+        var id = uuid.v5(
+          crypto.randomBytes(32).toString("hex"),
+          uuid.v5(req.body.apelido, uuid.v4())
+        );
         /////step 1 > done
         create({
           id: id,
@@ -115,43 +116,41 @@ router.post("/pessoas", async (req, res) => {
           apelido: req.body.apelido,
           nascimento: req.body.nascimento,
           stack: req.body.stack,
-        })
+        });
 
-        await new Promise((resolve, reject) => {pubsub.emit('set-user', {
+        await new Promise((resolve, reject) => {
+          pubsub.emit(
+            "set-user",
+            {
+              id: id,
+              nome: req.body.nome,
+              apelido: req.body.apelido,
+              nascimento: req.body.nascimento,
+              stack: req.body.stack,
+            },
+            (res) => resolve(res)
+          );
+        });
+
+        await new Promise((resolve, reject) => {
+          pubsub.emit("set-apelido", req.body.apelido, (res) => resolve(res));
+        });
+
+        const responseText = JSON.stringify({
           id: id,
           nome: req.body.nome,
           apelido: req.body.apelido,
           nascimento: req.body.nascimento,
           stack: req.body.stack,
-        }, (res) => resolve(res))})
-
-
-        await new Promise((resolve, reject) => {pubsub.emit('set-apelido',req.body.apelido, (res) => resolve(res))})
-
-
-        res.writeHead(201, {
-          "Content-Type": "application/json",
-          Location: `/pessoas/${id}`,
         });
-        res.end(
-          JSON.stringify({
-            id: id,
-            nome: req.body.nome,
-            apelido: req.body.apelido,
-            nascimento: req.body.nascimento,
-            stack: req.body.stack,
-          })
-        );
+        const response = `HTTP/1.1 201 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: ${responseText.length}\r\nContent-Type: application/json\r\nLocation: /pessoas/${id}\r\n\r\n${responseText}`;
+        res.write(response);
       } catch (e) {
-        res.writeHead(422, {
-          "Content-Type": "application/json",
+        const responseText = JSON.stringify({
+          message: "Apelido already exists.",
         });
-
-        res.end(
-          JSON.stringify({
-            message: "Apelido already exists.",
-          })
-        );
+        const response = `HTTP/1.1 422 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: ${responseText.length}\r\nContent-Type: application/json\r\n\r\n${responseText}`;
+        res.write(response);
       }
       return;
     }
@@ -162,49 +161,45 @@ router.get("/contagem-pessoas", async (req, res) => {
   let queryResult = await database.query(
     `SELECT COUNT(*) AS count FROM users;`
   );
-  res.writeHead(200);
-  res.end(queryResult.rows[0].count);
+  const responseText = queryResult.rows[0].count;
+  const response = `HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: ${responseText.length}\r\n\r\n${responseText}`;
+  res.write(response);
 });
 
 router.get("/pessoas", async (req, res) => {
   if (req.query.t) {
-    let query = await new Promise((resolve, reject) => {pubsub.emit('search', {query: req.query.t}, (res) => resolve(res))})
-
-    res.writeHead(200, {
-      "Content-Type": "application/json",
+    let query = await new Promise((resolve, reject) => {
+      pubsub.emit("search", { query: req.query.t }, (res) => resolve(res));
     });
-    res.end(JSON.stringify(query));
-    return
+    const responseText = JSON.stringify(query);
+    const response = `HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: ${responseText.length}\r\nContent-Type: application/json\r\n\r\n${responseText}`;
+    res.write(response);
+    return;
   } else {
-    res.writeHead(400, {
-      "Content-Type": "application/json",
+    const responseText = JSON.stringify({
+      message: "Missing t paramter.",
     });
-    res.end(
-      JSON.stringify({
-        message: "Missing t paramter.",
-      })
-    );
+    const response = `HTTP/1.1 400 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: ${responseText.length}\r\nContent-Type: application/json\r\n\r\n${responseText}`;
+    res.write(response);
   }
 });
 
 router.get("/pessoas/*", async (req, res) => {
-  let data = await new Promise((resolve, reject) => {pubsub.emit('get-user', {id: req.param}, (res) => resolve(res))})
-  
+  let data = await new Promise((resolve, reject) => {
+    pubsub.emit("get-user", { id: req.param }, (res) => resolve(res));
+  });
+
   if (data) {
-    res.writeHead(200, {
-      "Content-Type": "application/json",
-    });
-    res.end(JSON.stringify(data));
+    const responseText = JSON.stringify(data);
+    const response = `HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: ${responseText.length}\r\nContent-Type: application/json\r\n\r\n${responseText}`;
+    res.write(response);
     return;
   } else {
-    res.writeHead(404, {
-      "Content-Type": "application/json",
+    const responseText = JSON.stringify({
+      message: "This user does't exists.",
     });
-    res.end(
-      JSON.stringify({
-        message: "This user does't exists.",
-      })
-    );
+    const response = `HTTP/1.1 400 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: ${responseText.length}\r\nContent-Type: application/json\r\n\r\n${responseText}`;
+    res.write(response);
   }
 });
 /////////////////////////////////////////////////////////
@@ -256,28 +251,50 @@ function ValidateBody(validationSchema, req, res) {
       }
     }
   } catch (error) {
-    res.writeHead(422, { "Content-Type": "application/json" });
-    const response = { error: error.message };
-    res.end(JSON.stringify(response));
+    const responseText = JSON.stringify({ error: error.message });
+    const response = `HTTP/1.1 422 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: ${responseText.length}\r\nContent-Type: application/json\r\n\r\n${responseText}`;
+    res.write(response);
     return "error";
   }
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += "" + chunk;
-    });
-    req.on("end", () => {
-      resolve(body);
-    });
-    req.on("error", (err) => {
-      reject(err);
-    });
-  });
-}
+server.on("connection", async (socket, headers, body) => {
+  var req = {};
+  const firstLine = headers.split("\r\n")[0];
+  const [method, url, httpVersion] = firstLine.split(" ");
+  req.query = queryParse(url);
 
+  try {
+    body = body ? JSON.parse(body) : {};
+  } catch (e) {
+    body = {};
+  }
+  req.body = body;
+  req.url = url || "";
+  req.method = method;
+  if (req.url.split("/").length > 2) {
+    req.param = req.url.split("/")[2];
+    req.url = `/${req.url.split("/")[1]}/*`;
+  }
+  router.handle(req.url.split("?")[0], req.method, req, socket);
+
+  //  const response = "HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nConnection: Keep-Alive\r\nKeep-Alive: timeout=100, max=1000 \r\nContent-Length: 13\r\n\r\nHello, World!";
+  //  socket.write(response);
+});
+
+server.listen(process.env.PORT || 3000);
+console.log("Server listening on port", process.env.PORT || 3000);
+process.on("SIGINT", async () => {
+  await push();
+  if (database) {
+    await database.release();
+  }
+  process.exit();
+});
+
+process.on("uncaughtException", (err) => {});
+
+/*
 server
   .on("request", async (req, res) => {
     req.query = queryParse(req.url);
@@ -297,11 +314,4 @@ server
     router.handle(req.url.split("?")[0], req.method, req, res);
   })
   .listen(process.env.PORT || 3000, () => console.log(process.env.PORT));
-
-process.on("SIGINT", async () => {
-  await push()
-  if (database) {
-    await database.release();
-  }
-  process.exit();
-});
+*/

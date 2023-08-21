@@ -26,8 +26,8 @@ class ServerRouter {
             }
         }
         
-        res.writeHead(404);
-        res.end("Not Found");
+        const response = "HTTP/1.1 404 OK\r\nContent-Length: 9\r\n\r\nNot Found";
+        res.write(response)
     }
 }
 
